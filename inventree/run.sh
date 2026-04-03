@@ -299,24 +299,24 @@ ensure_database() {
     local db_exists
 
     role_exists="$(
-        gosu postgres "${PSQL_BIN}" -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" postgres \
+        gosu postgres "${PSQL_BIN}" -h 127.0.0.1 -p "${POSTGRES_PORT}" -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" postgres \
             | tr -d '[:space:]'
     )"
 
     if [ "${role_exists}" != "1" ]; then
         log "Creating PostgreSQL role ${DB_USER}"
-        gosu postgres "${PSQL_BIN}" -v ON_ERROR_STOP=1 postgres \
+        gosu postgres "${PSQL_BIN}" -h 127.0.0.1 -p "${POSTGRES_PORT}" -v ON_ERROR_STOP=1 postgres \
             -c "CREATE ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';"
     fi
 
     db_exists="$(
-        gosu postgres "${PSQL_BIN}" -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" postgres \
+        gosu postgres "${PSQL_BIN}" -h 127.0.0.1 -p "${POSTGRES_PORT}" -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" postgres \
             | tr -d '[:space:]'
     )"
 
     if [ "${db_exists}" != "1" ]; then
         log "Creating PostgreSQL database ${DB_NAME}"
-        gosu postgres "${PSQL_BIN}" -v ON_ERROR_STOP=1 postgres \
+        gosu postgres "${PSQL_BIN}" -h 127.0.0.1 -p "${POSTGRES_PORT}" -v ON_ERROR_STOP=1 postgres \
             -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
     fi
 }
