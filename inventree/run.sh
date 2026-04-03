@@ -5,6 +5,7 @@ set -Eeuo pipefail
 CONFIG_PATH="/data/options.json"
 PUBLIC_CONFIG_DIR="/config"
 STATE_DIR="/data/internal"
+INVENTREE_HOME_DATA="/home/inventree/data"
 POSTGRES_DATA_DIR="${STATE_DIR}/postgres"
 POSTGRES_RUN_DIR="${STATE_DIR}/postgres-run"
 REDIS_DIR="${STATE_DIR}/redis"
@@ -149,6 +150,7 @@ load_options() {
 }
 
 prepare_layout() {
+    ensure_dir "/data"
     ensure_dir "${STATE_DIR}"
     ensure_dir "${POSTGRES_DATA_DIR}"
     ensure_dir "${POSTGRES_RUN_DIR}"
@@ -162,6 +164,17 @@ prepare_layout() {
     # Allow service users to traverse into their owned subdirectories below /data/internal.
     # Sensitive files inside remain protected by their own file modes.
     chmod 711 "${STATE_DIR}"
+
+    ensure_dir "/home/inventree"
+
+    if [ -L "${INVENTREE_HOME_DATA}" ]; then
+        :
+    elif [ -d "${INVENTREE_HOME_DATA}" ] && [ -z "$(ls -A "${INVENTREE_HOME_DATA}" 2>/dev/null)" ]; then
+        rmdir "${INVENTREE_HOME_DATA}"
+        ln -s /data "${INVENTREE_HOME_DATA}"
+    elif [ ! -e "${INVENTREE_HOME_DATA}" ]; then
+        ln -s /data "${INVENTREE_HOME_DATA}"
+    fi
 }
 
 prepare_passwords() {
@@ -207,6 +220,15 @@ export_inventree_env() {
     detect_worker_counts
 
     export TZ="${TIMEZONE}"
+    export INVENTREE_DATA_DIR="${INVENTREE_HOME_DATA}"
+    export INVENTREE_STATIC_ROOT="${INVENTREE_HOME_DATA}/static"
+    export INVENTREE_MEDIA_ROOT="${INVENTREE_HOME_DATA}/media"
+    export INVENTREE_BACKUP_DIR="${INVENTREE_HOME_DATA}/backup"
+    export INVENTREE_PLUGIN_DIR="${INVENTREE_HOME_DATA}/plugins"
+    export INVENTREE_CONFIG_FILE="${INVENTREE_HOME_DATA}/config.yaml"
+    export INVENTREE_SECRET_KEY_FILE="${INVENTREE_HOME_DATA}/secret_key.txt"
+    export INVENTREE_OIDC_PRIVATE_KEY_FILE="${INVENTREE_HOME_DATA}/oidc.pem"
+    export INVENTREE_PLUGIN_FILE="${INVENTREE_HOME_DATA}/plugins.txt"
     export INVENTREE_SITE_URL="${SITE_URL}"
     export INVENTREE_TIMEZONE="${TIMEZONE}"
     export INVENTREE_LOG_LEVEL="${LOG_LEVEL}"
@@ -231,6 +253,67 @@ export_inventree_env() {
     export INVENTREE_GUNICORN_TIMEOUT="120"
     export INVENTREE_GUNICORN_WORKERS="${GUNICORN_WORKERS}"
     export INVENTREE_BACKGROUND_WORKERS="${BACKGROUND_WORKERS}"
+}
+
+patch_inventree_plugin_runtime() {
+    local plugin_apps_file="/home/inventree/src/backend/InvenTree/plugin/apps.py"
+
+    if [ ! -f "${plugin_apps_file}" ]; then
+        warn "Cannot patch plugin/apps.py because the file was not found"
+        return
+    fi
+
+    if grep -q "Skipping plugin loading during migrations" "${plugin_apps_file}"; then
+        return
+    fi
+
+    log "Patching InvenTree plugin startup to skip registry loading during migrations"
+
+    python3 - "${plugin_apps_file}" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+
+old_import = """from InvenTree.ready import (
+    canAppAccessDatabase,
+    ignore_ready_warning,
+    isInMainThread,
+    isInWorkerThread,
+)"""
+
+new_import = """from InvenTree.ready import (
+    canAppAccessDatabase,
+    ignore_ready_warning,
+    isInMainThread,
+    isInWorkerThread,
+    isRunningMigrations,
+)"""
+
+old_guard = """        if not isInMainThread() and not isInWorkerThread():
+            return
+
+        if not canAppAccessDatabase(
+"""
+
+new_guard = """        if not isInMainThread() and not isInWorkerThread():
+            return
+
+        if isRunningMigrations():
+            logger.info('Skipping plugin loading during migrations')
+            return
+
+        if not canAppAccessDatabase(
+"""
+
+if old_import not in text or old_guard not in text:
+    raise SystemExit("Unexpected plugin/apps.py format, cannot patch safely")
+
+text = text.replace(old_import, new_import, 1)
+text = text.replace(old_guard, new_guard, 1)
+path.write_text(text, encoding="utf-8")
+PY
 }
 
 find_postgres_binary_dir() {
@@ -503,6 +586,7 @@ main() {
     prepare_layout
     prepare_passwords
     export_inventree_env
+    patch_inventree_plugin_runtime
 
     init_postgres
     start_postgres
