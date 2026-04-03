@@ -37,4 +37,4 @@ schema:
   upload_limit_mb: int(1,2048)?
   plugins_enabled: bool?
   auto_update: bool?
-image: ghcr.io/DetFisch/home-assistant-inventree-{arch}
+image: ghcr.io/detfisch/home-assistant-inventree-{arch}
