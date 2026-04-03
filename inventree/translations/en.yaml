@@ -1,0 +1,31 @@
+configuration:
+  site_url:
+    name: Site URL
+    description: Full URL users will use to reach InvenTree, including port if needed.
+  timezone:
+    name: Timezone
+    description: Timezone used by InvenTree, for example Europe/Berlin.
+  admin_user:
+    name: Admin username
+    description: Username for the initial InvenTree superuser.
+  admin_email:
+    name: Admin email
+    description: Email address for the initial InvenTree superuser.
+  admin_password:
+    name: Admin password
+    description: Optional password for the initial superuser. Leave empty to auto-generate one.
+  log_level:
+    name: Log level
+    description: Log level used by the InvenTree server.
+  upload_limit_mb:
+    name: Upload limit
+    description: Maximum upload size in megabytes.
+  plugins_enabled:
+    name: Enable plugins
+    description: Enable InvenTree plugin loading.
+  auto_update:
+    name: Auto update
+    description: Allow automatic database migrations when required.
+
+network:
+  "8000/tcp": InvenTree web interface

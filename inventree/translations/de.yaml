@@ -1,0 +1,31 @@
+configuration:
+  site_url:
+    name: Site-URL
+    description: Vollstaendige URL, unter der InvenTree spaeter erreichbar ist, inklusive Port falls noetig.
+  timezone:
+    name: Zeitzone
+    description: Zeitzone fuer InvenTree, zum Beispiel Europe/Berlin.
+  admin_user:
+    name: Admin-Benutzername
+    description: Benutzername fuer den ersten InvenTree-Superuser.
+  admin_email:
+    name: Admin-E-Mail
+    description: E-Mail-Adresse fuer den ersten InvenTree-Superuser.
+  admin_password:
+    name: Admin-Passwort
+    description: Optionales Passwort fuer den ersten Superuser. Leer lassen, um eins erzeugen zu lassen.
+  log_level:
+    name: Log-Level
+    description: Log-Level des InvenTree-Servers.
+  upload_limit_mb:
+    name: Upload-Limit
+    description: Maximale Upload-Groesse in Megabyte.
+  plugins_enabled:
+    name: Plugins aktivieren
+    description: Aktiviert das Laden von InvenTree-Plugins.
+  auto_update:
+    name: Auto-Update
+    description: Erlaubt automatische Datenbankmigrationen, wenn sie benoetigt werden.
+
+network:
+  "8000/tcp": InvenTree-Weboberflaeche

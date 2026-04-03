@@ -1,0 +1,40 @@
+name: InvenTree
+slug: inventree
+description: Inventory management server for Home Assistant
+version: "0.1.0"
+url: https://github.com/inventree/InvenTree
+arch:
+  - aarch64
+  - amd64
+startup: services
+boot: auto
+init: false
+map:
+  - addon_config:rw
+ports:
+  "8000/tcp": 8000
+ports_description:
+  "8000/tcp": InvenTree web interface
+webui: http://[HOST]:[PORT:8000]
+panel_icon: mdi:archive-outline
+options:
+  site_url: http://homeassistant.local:8000
+  timezone: UTC
+  admin_user: admin
+  admin_email: admin@example.com
+  admin_password: ""
+  log_level: WARNING
+  upload_limit_mb: 100
+  plugins_enabled: true
+  auto_update: true
+schema:
+  site_url: str
+  timezone: str?
+  admin_user: str?
+  admin_email: str?
+  admin_password: password?
+  log_level: list(DEBUG|INFO|WARNING|ERROR|CRITICAL)?
+  upload_limit_mb: int(1,2048)?
+  plugins_enabled: bool?
+  auto_update: bool?
+image: ghcr.io/DetFisch/home-assistant-inventree-{arch}
