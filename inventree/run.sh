@@ -159,7 +159,9 @@ prepare_layout() {
     ensure_dir "/data/plugins"
     ensure_dir "${PUBLIC_CONFIG_DIR}"
 
-    chmod 700 "${STATE_DIR}"
+    # Allow service users to traverse into their owned subdirectories below /data/internal.
+    # Sensitive files inside remain protected by their own file modes.
+    chmod 711 "${STATE_DIR}"
 }
 
 prepare_passwords() {
