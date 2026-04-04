@@ -448,9 +448,9 @@ bootstrap_inventree() {
     cd /home/inventree/src/backend/InvenTree
 
     INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py wait_for_db
-    INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py migrate --noinput --run-syncdb
-    INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py remove_stale_contenttypes --include-stale-apps --no-input || warn "remove_stale_contenttypes failed"
-    INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py collectstatic --noinput --clear
+    INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py migrate --skip-checks --noinput --run-syncdb
+    INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py remove_stale_contenttypes --skip-checks --include-stale-apps --no-input || warn "remove_stale_contenttypes failed"
+    INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py collectstatic --skip-checks --noinput --clear
 
     if [ "${PLUGINS_ENABLED}" = "True" ]; then
         python manage.py collectplugins || warn "collectplugins failed"

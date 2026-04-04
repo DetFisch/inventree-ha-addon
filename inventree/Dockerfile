@@ -3,15 +3,15 @@ FROM ${BUILD_FROM}
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-ENV INVENTREE_DATA_DIR=/data \
-    INVENTREE_STATIC_ROOT=/data/static \
-    INVENTREE_MEDIA_ROOT=/data/media \
-    INVENTREE_BACKUP_DIR=/data/backup \
-    INVENTREE_PLUGIN_DIR=/data/plugins \
-    INVENTREE_CONFIG_FILE=/data/config.yaml \
-    INVENTREE_SECRET_KEY_FILE=/data/secret_key.txt \
-    INVENTREE_OIDC_PRIVATE_KEY_FILE=/data/oidc.pem \
-    INVENTREE_PLUGIN_FILE=/data/plugins.txt \
+ENV INVENTREE_DATA_DIR=/home/inventree/data \
+    INVENTREE_STATIC_ROOT=/home/inventree/data/static \
+    INVENTREE_MEDIA_ROOT=/home/inventree/data/media \
+    INVENTREE_BACKUP_DIR=/home/inventree/data/backup \
+    INVENTREE_PLUGIN_DIR=/home/inventree/data/plugins \
+    INVENTREE_CONFIG_FILE=/home/inventree/data/config.yaml \
+    INVENTREE_SECRET_KEY_FILE=/home/inventree/data/secret_key.txt \
+    INVENTREE_OIDC_PRIVATE_KEY_FILE=/home/inventree/data/oidc.pem \
+    INVENTREE_PLUGIN_FILE=/home/inventree/data/plugins.txt \
     INVENTREE_WEB_ADDR=127.0.0.1 \
     INVENTREE_WEB_PORT=8001 \
     PYTHONUNBUFFERED=1
@@ -27,6 +27,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+RUN rm -rf /home/inventree/data && ln -s /data /home/inventree/data
 
 COPY run.sh /run.sh
 RUN chmod 755 /run.sh
