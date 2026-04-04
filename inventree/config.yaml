@@ -1,7 +1,7 @@
 name: InvenTree
 slug: inventree
 description: Inventory management server for Home Assistant
-version: "0.1.7"
+version: "0.1.9"
 url: https://github.com/inventree/InvenTree
 arch:
   - aarch64
@@ -25,6 +25,8 @@ options:
   admin_password: ""
   log_level: WARNING
   upload_limit_mb: 100
+  web_workers: 1
+  background_workers: 1
   plugins_enabled: true
   auto_update: true
 schema:
@@ -35,6 +37,8 @@ schema:
   admin_password: password?
   log_level: list(DEBUG|INFO|WARNING|ERROR|CRITICAL)?
   upload_limit_mb: int(1,2048)?
+  web_workers: int(1,4)?
+  background_workers: int(0,4)?
   plugins_enabled: bool?
   auto_update: bool?
 image: ghcr.io/detfisch/home-assistant-inventree-{arch}

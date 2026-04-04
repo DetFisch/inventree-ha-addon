@@ -10,6 +10,7 @@ POSTGRES_DATA_DIR="${STATE_DIR}/postgres"
 POSTGRES_RUN_DIR="${STATE_DIR}/postgres-run"
 REDIS_DIR="${STATE_DIR}/redis"
 NGINX_CONFIG="/tmp/nginx.conf"
+BOOTSTRAP_MARKER_FILE="${STATE_DIR}/bootstrap_complete_v1"
 
 POSTGRES_PORT="5432"
 REDIS_PORT="6379"
@@ -110,6 +111,8 @@ load_options() {
     ADMIN_PASSWORD="$(json_get '.admin_password' '')"
     LOG_LEVEL="$(json_get '.log_level' 'WARNING')"
     UPLOAD_LIMIT_MB="$(json_get '.upload_limit_mb' '100')"
+    WEB_WORKERS_RAW="$(json_get '.web_workers' '1')"
+    BACKGROUND_WORKERS_RAW="$(json_get '.background_workers' '1')"
     PLUGINS_ENABLED_RAW="$(json_get '.plugins_enabled' 'true')"
     AUTO_UPDATE_RAW="$(json_get '.auto_update' 'true')"
 
@@ -142,6 +145,36 @@ load_options() {
     case "${UPLOAD_LIMIT_MB}" in
         ''|*[!0-9]*)
             UPLOAD_LIMIT_MB="100"
+            ;;
+    esac
+
+    case "${WEB_WORKERS_RAW}" in
+        ''|*[!0-9]*)
+            WEB_WORKERS="1"
+            ;;
+        *)
+            if [ "${WEB_WORKERS_RAW}" -lt 1 ]; then
+                WEB_WORKERS="1"
+            elif [ "${WEB_WORKERS_RAW}" -gt 4 ]; then
+                WEB_WORKERS="4"
+            else
+                WEB_WORKERS="${WEB_WORKERS_RAW}"
+            fi
+            ;;
+    esac
+
+    case "${BACKGROUND_WORKERS_RAW}" in
+        ''|*[!0-9]*)
+            BACKGROUND_WORKERS="1"
+            ;;
+        *)
+            if [ "${BACKGROUND_WORKERS_RAW}" -lt 0 ]; then
+                BACKGROUND_WORKERS="0"
+            elif [ "${BACKGROUND_WORKERS_RAW}" -gt 4 ]; then
+                BACKGROUND_WORKERS="4"
+            else
+                BACKGROUND_WORKERS="${BACKGROUND_WORKERS_RAW}"
+            fi
             ;;
     esac
 
@@ -201,19 +234,7 @@ prepare_passwords() {
 }
 
 detect_worker_counts() {
-    local cores
-
-    cores="$(nproc)"
-
-    if [ "${cores}" -lt 2 ]; then
-        GUNICORN_WORKERS="2"
-    elif [ "${cores}" -gt 4 ]; then
-        GUNICORN_WORKERS="4"
-    else
-        GUNICORN_WORKERS="${cores}"
-    fi
-
-    BACKGROUND_WORKERS="${GUNICORN_WORKERS}"
+    GUNICORN_WORKERS="${WEB_WORKERS}"
 }
 
 export_inventree_env() {
@@ -227,8 +248,8 @@ export_inventree_env() {
     export INVENTREE_PLUGIN_DIR="${INVENTREE_HOME_DATA}/plugins"
     export INVENTREE_CONFIG_FILE="${INVENTREE_HOME_DATA}/config.yaml"
     export INVENTREE_SECRET_KEY_FILE="${INVENTREE_HOME_DATA}/secret_key.txt"
-    export INVENTREE_OIDC_PRIVATE_KEY_FILE="${INVENTREE_HOME_DATA}/oidc.pem"
-    export INVENTREE_PLUGIN_FILE="${INVENTREE_HOME_DATA}/plugins.txt"
+    export INVENTREE_OIDC_PRIVATE_KEY_FILE="/data/oidc.pem"
+    export INVENTREE_PLUGIN_FILE="/data/plugins.txt"
     export INVENTREE_SITE_URL="${SITE_URL}"
     export INVENTREE_TIMEZONE="${TIMEZONE}"
     export INVENTREE_LOG_LEVEL="${LOG_LEVEL}"
@@ -587,25 +608,34 @@ wait_for_redis() {
 }
 
 bootstrap_inventree() {
+    local run_full_bootstrap="false"
+
     log "Running InvenTree bootstrap tasks"
 
     cd /home/inventree/src/backend/InvenTree
 
     INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py migrate --skip-checks --noinput --run-syncdb
-    INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py remove_stale_contenttypes --skip-checks --include-stale-apps --no-input || warn "remove_stale_contenttypes failed"
-    INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py collectstatic --skip-checks --noinput --clear
 
-    if [ "${PLUGINS_ENABLED}" = "True" ]; then
-        python manage.py collectplugins || warn "collectplugins failed"
+    if [ ! -f "${BOOTSTRAP_MARKER_FILE}" ]; then
+        run_full_bootstrap="true"
+        log "Running one-time static and rebuild bootstrap tasks"
+        INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py remove_stale_contenttypes --skip-checks --include-stale-apps --no-input || warn "remove_stale_contenttypes failed"
+        INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py collectstatic --skip-checks --noinput --clear
+        python manage.py rebuild_models || warn "rebuild_models failed"
+        python manage.py rebuild_thumbnails || warn "rebuild_thumbnails failed"
+        touch "${BOOTSTRAP_MARKER_FILE}"
+    else
+        log "Skipping one-time static and rebuild bootstrap tasks"
     fi
 
-    python manage.py rebuild_models || warn "rebuild_models failed"
-    python manage.py rebuild_thumbnails || warn "rebuild_thumbnails failed"
+    if [ "${PLUGINS_ENABLED}" = "True" ] && { [ "${run_full_bootstrap}" = "true" ] || [ "${INVENTREE_PLUGIN_FILE}" -nt "${BOOTSTRAP_MARKER_FILE}" ]; }; then
+        python manage.py collectplugins || warn "collectplugins failed"
+    fi
 }
 
 write_nginx_config() {
     cat > "${NGINX_CONFIG}" <<EOF
-worker_processes auto;
+worker_processes 1;
 pid /tmp/nginx.pid;
 
 events {
@@ -709,6 +739,11 @@ start_gunicorn() {
 }
 
 start_worker() {
+    if [ "${BACKGROUND_WORKERS}" -eq 0 ]; then
+        log "Skipping InvenTree worker because background_workers=0"
+        return
+    fi
+
     log "Starting InvenTree worker"
 
     cd /home/inventree

@@ -10,6 +10,12 @@ Der Add-on-Container kapselt:
 - Nginx
 - den InvenTree Background Worker
 
+Das Add-on ist bewusst konservativ auf Home-Assistant-Hardware ausgelegt:
+
+- Standardmaessig `1` Web-Worker
+- Standardmaessig `1` Background-Worker
+- `background_workers: 0` schaltet den Worker komplett ab, falls minimale Last wichtiger ist als Hintergrundjobs
+
 ## Warum kein Ingress?
 
 InvenTree erzeugt aktuell absolute `/static/`- und `/media/`-Pfade. Das passt nicht sauber zu Home-Assistant-Ingress mit Pfad-Prefix, ohne den Web-Client oder das Templating gezielt zu patchen. Deshalb ist dieses erste Add-on bewusst stabil ueber einen normalen Web-Port gebaut.

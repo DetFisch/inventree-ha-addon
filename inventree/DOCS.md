@@ -30,6 +30,9 @@ Wenn du in Home Assistant den externen Port aenderst, musst du `site_url` ebenfa
 4. Add-on starten
 5. `OPEN WEB UI` aufrufen
 
+Der erste Start ist deutlich schwerer als spaetere Neustarts, weil Migrationen, statische Assets und Initial-Rebuilds ausgefuehrt werden.
+Spaetere Neustarts ueberspringen diese teuren Schritte.
+
 Wenn `admin_password` leer bleibt, erzeugt das Add-on beim ersten Start ein Passwort und schreibt es nach:
 
 - `/config/admin_password.txt` innerhalb des Containers
@@ -57,6 +60,15 @@ Log-Level fuer InvenTree.
 ### `upload_limit_mb`
 
 Maximale Upload-Groesse fuer Nginx und damit fuer Datei-Uploads.
+
+### `web_workers`
+
+Anzahl der Gunicorn-Web-Worker. Fuer Home-Assistant-Hardware ist `1` ein sinnvoller Startwert.
+
+### `background_workers`
+
+Anzahl der InvenTree-Background-Worker. `1` ist fuer kleine Systeme der sinnvolle Standard.
+Wenn du Last minimieren willst, kannst du `0` setzen. Dann laufen jedoch keine Hintergrundjobs.
 
 ### `plugins_enabled`
 
