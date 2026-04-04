@@ -316,6 +316,150 @@ path.write_text(text, encoding="utf-8")
 PY
 }
 
+patch_inventree_bootstrap_runtime() {
+    log "Patching InvenTree bootstrap helpers to avoid pre-migration database queries"
+
+    python3 <<'PY'
+from pathlib import Path
+
+
+def patch_cache_file(path: Path) -> None:
+    if not path.exists():
+        raise SystemExit(f"Missing file: {path}")
+
+    text = path.read_text(encoding="utf-8")
+
+    if "Skipping content type cache during migrations or backup" in text:
+        return
+
+    old = """def get_cached_content_types(cache_key: str = 'all_content_types') -> list:
+    \"\"\"Return a list of all ContentType objects, using session cache if possible.\"\"\"
+    from django.contrib.contenttypes.models import ContentType
+
+    # Attempt to retrieve a list of ContentType objects from session cache
+"""
+
+    new = """def get_cached_content_types(cache_key: str = 'all_content_types') -> list:
+    \"\"\"Return a list of all ContentType objects, using session cache if possible.\"\"\"
+    from django.contrib.contenttypes.models import ContentType
+
+    if InvenTree.ready.isRunningMigrations() or InvenTree.ready.isRunningBackup():
+        logger.info('Skipping content type cache during migrations or backup')
+        return []
+
+    # Attempt to retrieve a list of ContentType objects from session cache
+"""
+
+    if old not in text:
+        raise SystemExit(f"Unexpected cache.py format: {path}")
+
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+
+def patch_currency_file(path: Path) -> None:
+    if not path.exists():
+        raise SystemExit(f"Missing file: {path}")
+
+    text = path.read_text(encoding="utf-8")
+
+    if "Skipping currency code lookup during migrations or backup" in text:
+        return
+
+    old = """def currency_codes() -> list:
+    \"\"\"Returns the current currency codes.\"\"\"
+    from common.settings import get_global_setting
+
+    codes = None
+
+    # Ensure we do not hit the database until the common app is loaded
+"""
+
+    new = """def currency_codes() -> list:
+    \"\"\"Returns the current currency codes.\"\"\"
+    from common.settings import get_global_setting
+
+    codes = None
+
+    if InvenTree.ready.isRunningMigrations() or InvenTree.ready.isRunningBackup():
+        logger.info('Skipping currency code lookup during migrations or backup')
+        codes = currency_codes_default_list()
+
+    # Ensure we do not hit the database until the common app is loaded
+"""
+
+    if old not in text:
+        raise SystemExit(f"Unexpected currency.py format: {path}")
+
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+
+def patch_states_file(path: Path) -> None:
+    if not path.exists():
+        raise SystemExit(f"Missing file: {path}")
+
+    text = path.read_text(encoding="utf-8")
+
+    if "Skipping custom status lookup during migrations or backup" in text:
+        return
+
+    old_imports = """import enum
+import logging
+import re
+from enum import Enum
+from typing import Optional
+
+logger = logging.getLogger('inventree')
+"""
+
+    new_imports = """import enum
+import logging
+import re
+from enum import Enum
+from typing import Optional
+
+import InvenTree.ready
+
+logger = logging.getLogger('inventree')
+"""
+
+    old_queryset = """    def custom_queryset(cls):
+        \"\"\"Return a queryset of all custom values for this status class.\"\"\"
+        from common.models import InvenTreeCustomUserStateModel
+
+        try:
+            return InvenTreeCustomUserStateModel.objects.filter(
+                reference_status=cls.__name__
+            )
+"""
+
+    new_queryset = """    def custom_queryset(cls):
+        \"\"\"Return a queryset of all custom values for this status class.\"\"\"
+        from common.models import InvenTreeCustomUserStateModel
+
+        if InvenTree.ready.isRunningMigrations() or InvenTree.ready.isRunningBackup():
+            logger.info('Skipping custom status lookup during migrations or backup')
+            return None
+
+        try:
+            return InvenTreeCustomUserStateModel.objects.filter(
+                reference_status=cls.__name__
+            )
+"""
+
+    if old_imports not in text or old_queryset not in text:
+        raise SystemExit(f"Unexpected states.py format: {path}")
+
+    text = text.replace(old_imports, new_imports, 1)
+    text = text.replace(old_queryset, new_queryset, 1)
+    path.write_text(text, encoding="utf-8")
+
+
+patch_cache_file(Path("/home/inventree/src/backend/InvenTree/InvenTree/cache.py"))
+patch_currency_file(Path("/home/inventree/src/backend/InvenTree/common/currency.py"))
+patch_states_file(Path("/home/inventree/src/backend/InvenTree/generic/states/states.py"))
+PY
+}
+
 find_postgres_binary_dir() {
     local postgres_bin
 
@@ -447,7 +591,6 @@ bootstrap_inventree() {
 
     cd /home/inventree/src/backend/InvenTree
 
-    INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py wait_for_db
     INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py migrate --skip-checks --noinput --run-syncdb
     INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py remove_stale_contenttypes --skip-checks --include-stale-apps --no-input || warn "remove_stale_contenttypes failed"
     INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py collectstatic --skip-checks --noinput --clear
@@ -587,6 +730,7 @@ main() {
     prepare_passwords
     export_inventree_env
     patch_inventree_plugin_runtime
+    patch_inventree_bootstrap_runtime
 
     init_postgres
     start_postgres
