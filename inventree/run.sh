@@ -69,6 +69,10 @@ ensure_dir() {
     mkdir -p "$1"
 }
 
+static_assets_present() {
+    find /data/static -mindepth 1 -print -quit 2>/dev/null | grep -q .
+}
+
 json_get() {
     local key=$1
     local fallback=$2
@@ -617,15 +621,18 @@ bootstrap_inventree() {
     INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py migrate --skip-checks --noinput --run-syncdb
 
     if [ ! -f "${BOOTSTRAP_MARKER_FILE}" ]; then
-        run_full_bootstrap="true"
-        log "Running one-time static and rebuild bootstrap tasks"
-        INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py remove_stale_contenttypes --skip-checks --include-stale-apps --no-input || warn "remove_stale_contenttypes failed"
-        INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py collectstatic --skip-checks --noinput --clear
-        python manage.py rebuild_models || warn "rebuild_models failed"
-        python manage.py rebuild_thumbnails || warn "rebuild_thumbnails failed"
-        touch "${BOOTSTRAP_MARKER_FILE}"
+        if static_assets_present; then
+            log "Existing static assets detected, marking bootstrap as complete"
+            touch "${BOOTSTRAP_MARKER_FILE}"
+        else
+            run_full_bootstrap="true"
+            log "Running one-time static bootstrap tasks"
+            INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py remove_stale_contenttypes --skip-checks --include-stale-apps --no-input || warn "remove_stale_contenttypes failed"
+            INVENTREE_PLUGINS_ENABLED="False" INVENTREE_AUTO_UPDATE="False" python manage.py collectstatic --skip-checks --noinput --clear
+            touch "${BOOTSTRAP_MARKER_FILE}"
+        fi
     else
-        log "Skipping one-time static and rebuild bootstrap tasks"
+        log "Skipping one-time static bootstrap tasks"
     fi
 
     if [ "${PLUGINS_ENABLED}" = "True" ] && { [ "${run_full_bootstrap}" = "true" ] || [ "${INVENTREE_PLUGIN_FILE}" -nt "${BOOTSTRAP_MARKER_FILE}" ]; }; then
