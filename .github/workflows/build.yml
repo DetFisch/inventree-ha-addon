@@ -1,93 +1,110 @@
-name: Build And Publish
+name: Add-on images
 
 on:
   push:
-    branches:
-      - main
-      - master
-    paths:
-      - ".github/workflows/build.yml"
-      - "inventree/**"
+    branches: [main]
   pull_request:
-    paths:
-      - ".github/workflows/build.yml"
-      - "inventree/**"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: addon-images-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.addons.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install PyYAML==6.0.3
+      - run: python .github/scripts/test_addon_images.py
+      - name: Read versions, architectures and build settings
+        id: addons
+        run: echo "matrix=$(python .github/scripts/addon_images.py matrix)" >> "$GITHUB_OUTPUT"
+
   build:
-    name: Build inventree (${{ matrix.ha_arch }})
-    runs-on: ${{ matrix.ha_arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    name: Build ${{ matrix.path }} (${{ matrix.arch }})
+    needs: [metadata]
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
+      id-token: write
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - ha_arch: amd64
-            docker_platform: linux/amd64
-          - ha_arch: aarch64
-            docker_platform: linux/arm64
+      matrix: ${{ fromJSON(needs.metadata.outputs.matrix) }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Read add-on version
-        id: version
-        run: |
-          VERSION="$(sed -n 's/^version:[[:space:]]*"\{0,1\}\([^"]\+\)"\{0,1\}$/\1/p' inventree/config.yaml | head -n1)"
-          if [ -z "${VERSION}" ]; then
-            echo "Could not read version from inventree/config.yaml" >&2
-            exit 1
-          fi
-          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Set build date
-        id: build_date
-        run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_OUTPUT}"
-
-      - name: Normalize image owner
-        id: image_owner
-        run: echo "value=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "${GITHUB_OUTPUT}"
-
-      - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+      - uses: actions/checkout@v6
+      - uses: docker/setup-qemu-action@v4
+        if: matrix.arch != 'amd64' && matrix.arch != 'aarch64'
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Generate Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
+      - name: Build date
+        id: date
+        run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - name: Build and push commit image
+        id: image
+        uses: docker/build-push-action@v7
         with:
-          images: ghcr.io/${{ steps.image_owner.outputs.value }}/home-assistant-inventree-${{ matrix.ha_arch }}
-          tags: |
-            type=raw,value=${{ steps.version.outputs.version }}
-            type=sha,prefix=sha-
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: inventree
-          file: inventree/Dockerfile
-          platforms: ${{ matrix.docker_platform }}
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          context: ${{ matrix.path }}
+          platforms: ${{ matrix.platform }}
+          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          tags: ${{ matrix.image }}:sha-${{ github.sha }}
           build-args: |
-            BUILD_ARCH=${{ matrix.ha_arch }}
-            BUILD_DATE=${{ steps.build_date.outputs.value }}
-            BUILD_DESCRIPTION=InvenTree server for Home Assistant
-            BUILD_NAME=InvenTree
-            BUILD_REF=${{ github.sha }}
-            BUILD_REPOSITORY=${{ github.repository }}
-            BUILD_VERSION=${{ steps.version.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ matrix.build_args }}
+            BUILD_DATE=${{ steps.date.outputs.value }}
+          labels: |
+            io.hass.type=addon
+            io.hass.arch=${{ matrix.arch }}
+            io.hass.version=${{ matrix.version }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ matrix.version }}
+          cache-from: type=gha,scope=${{ matrix.scope }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.scope }}
+      - uses: sigstore/cosign-installer@v4
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+      - name: Sign commit image
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          IMAGE_REF: ${{ matrix.image }}@${{ steps.image.outputs.digest }}
+        run: cosign sign --yes "$IMAGE_REF"
+
+  publish:
+    name: Publish immutable releases
+    needs: [metadata, build]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install PyYAML==6.0.3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@v4
+      - name: Publish version and latest after all architectures pass
+        env:
+          SIGN_IMAGES: "true"
+        run: python .github/scripts/addon_images.py publish

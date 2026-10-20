@@ -1,0 +1,6 @@
+[
+  {
+    "path": "inventree",
+    "image": "ghcr.io/detfisch/home-assistant-inventree-{arch}"
+  }
+]
