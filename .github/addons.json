@@ -1,6 +1,13 @@
 [
   {
     "path": "inventree",
-    "image": "ghcr.io/detfisch/home-assistant-inventree-{arch}"
+    "image": "ghcr.io/detfisch/home-assistant-inventree-{arch}",
+    "smoke": {
+      "entrypoint": "bash",
+      "args": [
+        "-ec",
+        "bash -n /run.sh; test -x /run.sh; command -v nginx; command -v redis-server; command -v gosu; command -v jq; python -c \"import django; from django.db.backends.postgresql import base; assert base.Database\""
+      ]
+    }
   }
 ]
