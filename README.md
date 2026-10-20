@@ -56,3 +56,13 @@ Beim Aufbau wurden die offiziellen Home-Assistant-App/Add-on-Strukturen und das 
 - Home Assistant Developer Docs: https://developers.home-assistant.io/docs/apps/configuration
 - Offizielles Beispiel-Add-on: https://github.com/home-assistant/addons-example
 - InvenTree Docker-Setup: https://github.com/inventree/InvenTree/tree/master/contrib/container
+
+## Pre-built Home Assistant images
+
+Home Assistant installs and updates this add-on from the container image declared
+in its configuration. It downloads the matching version for the host architecture
+instead of building the Dockerfile locally. GitHub Actions builds on every push
+to the default branch and publishes after all declared architectures pass.
+Existing release tags are kept; increase the add-on version for a new release.
+
+See [.github/ADDON_IMAGES.md](.github/ADDON_IMAGES.md) for the build and release workflow.
